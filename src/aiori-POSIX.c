@@ -296,6 +296,29 @@ static void *POSIX_Open(char *testFileName, IOR_param_t * param)
         return ((void *)fd);
 }
 
+int lock_reg(int fd, int cmd, int type, off_t offset, int whence, off_t len)
+{
+        struct flock lock;
+
+        lock.l_type = type;
+        lock.l_start = offset;
+        lock.l_whence = whence;
+        lock.l_len = len;
+
+        return (fcntl(fd, cmd, &lock));
+}
+
+#define read_lock(fd, offset, whence, len) \
+        lock_reg((fd), F_SETLK, F_RDLCK, (offset), (whence), (len))
+#define readw_lock(fd, offset, whence, len) \
+        lock_reg(((fd), F_SETLKW, F_RDLCK, (offset), (whence), (len))
+#define write_lock(fd, offset, whence, len) \
+        lock_reg((fd), F_SETLK, F_WRLCK, (offset), (whence), (len))
+#define writew_lock(fd, offset, whence, len) \
+        lock_reg((fd), F_SETLKW, F_WRLCK, (offset), (whence), (len))
+#define un_lock(fd, offset, whence, len) \
+        lock_reg((fd), F_SETLK, F_UNLCK, (offset), (whence), (len))
+
 /*
  * Write or read access to file using the POSIX interface.
  */
@@ -305,7 +328,7 @@ static IOR_offset_t POSIX_Xfer(int access, void *file, IOR_size_t * buffer,
         int xferRetries = 0;
         long long remaining = (long long)length;
         char *ptr = (char *)buffer;
-        long long rc;
+        ssize_t bytes;
         int fd;
 
         fd = *(int *)file;
@@ -322,6 +345,8 @@ static IOR_offset_t POSIX_Xfer(int access, void *file, IOR_size_t * buffer,
                 ERR("lseek64() failed");
 
         while (remaining > 0) {
+                int rc;
+
                 /* write/read file */
                 if (access == WRITE) {  /* WRITE */
                         if (verbose >= VERBOSE_4) {
@@ -330,9 +355,19 @@ static IOR_offset_t POSIX_Xfer(int access, void *file, IOR_size_t * buffer,
                                         rank,
                                         param->offset + length - remaining);
                         }
-                        rc = write(fd, ptr, remaining);
-                        if (rc == -1)
+                        if (param->wrlock) {
+                                rc = write_lock(fd, 0, SEEK_CUR, remaining);
+                                if (rc == -1)
+                                        ERR("write lock failed");
+                        }
+                        bytes = write(fd, ptr, remaining);
+                        if (bytes == -1)
                                 ERR("write() failed");
+                        if (param->wrlock) {
+                                rc = un_lock(fd, 0, SEEK_CUR, remaining);
+                                if (rc == -1)
+                                        ERR("unlock failed");
+                        }
                         if (param->fsyncPerWrite == TRUE)
                                 POSIX_Fsync(&fd, param);
                 } else {        /* READ or CHECK */
@@ -342,18 +377,28 @@ static IOR_offset_t POSIX_Xfer(int access, void *file, IOR_size_t * buffer,
                                         rank,
                                         param->offset + length - remaining);
                         }
-                        rc = read(fd, ptr, remaining);
-                        if (rc == 0)
+                        if (param->rdlock) {
+                                rc = read_lock(fd, 0, SEEK_CUR, remaining);
+                                if (rc == -1)
+                                        ERR("read lock failed");
+                        }
+                        bytes = read(fd, ptr, remaining);
+                        if (bytes == 0)
                                 ERR("read() returned EOF prematurely");
-                        if (rc == -1)
+                        if (bytes == -1)
                                 ERR("read() failed");
+                        if (param->rdlock) {
+                                rc = un_lock(fd, 0, SEEK_CUR, remaining);
+                                if (rc == -1)
+                                        ERR("unlock failed");
+                        }
                 }
-                if (rc < remaining) {
+                if (bytes < remaining) {
                         fprintf(stdout,
                                 "WARNING: Task %d, partial %s, %lld of %lld bytes at offset %lld\n",
                                 rank,
                                 access == WRITE ? "write()" : "read()",
-                                rc, remaining,
+                                bytes, remaining,
                                 param->offset + length - remaining);
                         if (param->singleXferAttempt == TRUE)
                                 MPI_CHECK(MPI_Abort(MPI_COMM_WORLD, -1),
@@ -361,10 +406,10 @@ static IOR_offset_t POSIX_Xfer(int access, void *file, IOR_size_t * buffer,
                         if (xferRetries > MAX_RETRY)
                                 ERR("too many retries -- aborting");
                 }
-                assert(rc >= 0);
-                assert(rc <= remaining);
-                remaining -= rc;
-                ptr += rc;
+                assert(bytes >= 0);
+                assert(bytes <= remaining);
+                remaining -= bytes;
+                ptr += bytes;
                 xferRetries++;
         }
 #ifdef HAVE_GPFS_FCNTL_H

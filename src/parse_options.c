@@ -232,6 +232,17 @@ void DecodeDirective(char *line, IOR_param_t *params)
                 params->fsyncPerWrite = atoi(value);
         } else if (strcasecmp(option, "fsync") == 0) {
                 params->fsync = atoi(value);
+        } else if (strcasecmp(option, "flockType") == 0) {
+                if (strcmp(optarg, "rw") == 0) {
+                        params->rdlock = 1;
+                        params->wrlock = 1;
+                } else if (strcmp(optarg, "r") == 0) {
+                        params->rdlock = 1;
+                } else if (strcmp(optarg, "w") == 0) {
+                        params->wrlock = 1;
+                } else if (strlen(optarg) != 0) {
+                        ERR("argument to -L must be r, w, or rw");
+                }
         } else if (strcasecmp(option, "randomoffset") == 0) {
                 params->randomOffset = atoi(value);
         } else if (strcasecmp(option, "memoryPerTask") == 0) {
@@ -405,7 +416,7 @@ IOR_test_t *ReadConfigScript(char *scriptName)
 IOR_test_t *ParseCommandLine(int argc, char **argv)
 {
         static const char *opts =
-          "a:A:b:BcCd:D:eEf:FgG:hHi:Ij:J:kKlmM:nN:o:O:pPqQ:rRs:St:T:uU:vVwWxX:YzZ";
+          "a:A:b:BcCd:D:eEf:FgG:hHi:Ij:J:kKlL:mM:nN:o:O:pPqQ:rRs:St:T:uU:vVwWxX:YzZ";
         int c, i;
         static IOR_test_t *tests = NULL;
 
@@ -501,6 +512,18 @@ IOR_test_t *ParseCommandLine(int argc, char **argv)
                         break;
                 case 'l':
                         initialTestParams.storeFileOffset = TRUE;
+                        break;
+                case 'L':
+                        if (strcmp(optarg, "rw") == 0) {
+                                initialTestParams.rdlock = 1;
+                                initialTestParams.wrlock = 1;
+                        } else if (strcmp(optarg, "r") == 0) {
+                                initialTestParams.rdlock = 1;
+                        } else if (strcmp(optarg, "w") == 0) {
+                                initialTestParams.wrlock = 1;
+                        } else if (strlen(optarg) != 0) {
+                                ERR("argument to -L must be r, w, or rw");
+                        }
                         break;
 		case 'M':
                         initialTestParams.memoryPerNode =

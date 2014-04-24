@@ -703,6 +703,7 @@ static void DisplayUsage(char **argv)
                 " -k    keepFile -- don't remove the test file(s) on program exit",
                 " -K    keepFileWithError  -- keep error-filled file(s) after data-checking",
                 " -l    storeFileOffset -- use file offset as stored signature",
+                " -L S  flockType -- lock region before reading or writing [r|w|rw]",
                 " -m    multiFile -- use number of reps (-i) for multiple file count",
                 " -M N  memoryPerNode -- hog memory on the node  (e.g.: 2g, 75%)",
                 " -n    noFill -- no fill in HDF5 file creation",
@@ -1563,6 +1564,8 @@ static void ShowTest(IOR_param_t * test)
         fprintf(stdout, "\t%s=%d\n", "interTestDelay", test->interTestDelay);
         fprintf(stdout, "\t%s=%d\n", "fsync", test->fsync);
         fprintf(stdout, "\t%s=%d\n", "fsYncperwrite", test->fsyncPerWrite);
+        fprintf(stdout, "\t%s=%d\n", "read flock", test->rdlock);
+        fprintf(stdout, "\t%s=%d\n", "write flock", test->wrlock);
         fprintf(stdout, "\t%s=%d\n", "useExistingTestFile",
                 test->useExistingTestFile);
         fprintf(stdout, "\t%s=%d\n", "showHints", test->showHints);
@@ -2260,6 +2263,9 @@ static void ValidTests(IOR_param_t * test)
         AioriBind(test->api);
         backend->set_version(test);
 
+        /* Prevent ERR() from reporting stale error codes. */
+        errno = 0;
+
         if (test->repetitions <= 0)
                 WARN_RESET("too few test repetitions",
                            test, &defaults, repetitions);
@@ -2317,6 +2323,10 @@ static void ValidTests(IOR_param_t * test)
         if ((strcmp(test->api, "POSIX") != 0) && test->fsync)
                 WARN_RESET("fsync() only available in POSIX",
                            test, &defaults, fsync);
+        if ((strcmp(test->api, "POSIX") != 0) &&
+            (test->rdlock != 0 || test->wrlock != 0)) {
+                WARN("flock() only available in POSIX");
+        }
         if ((strcmp(test->api, "MPIIO") != 0) && test->preallocate)
                 WARN_RESET("preallocation only available in MPIIO",
                            test, &defaults, preallocate);

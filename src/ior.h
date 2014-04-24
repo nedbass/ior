@@ -106,6 +106,8 @@ typedef struct
     int singleXferAttempt;           /* do not retry transfer if incomplete */
     int fsyncPerWrite;               /* fsync() after each write */
     int fsync;                       /* fsync() after write */
+    int wrlock;                      /* lock region exclusively during writes */
+    int rdlock;                      /* take shared region lock during reads */
 
     /* MPI variables */
     MPI_Datatype transferType;       /* datatype for transfer */
